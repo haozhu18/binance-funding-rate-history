@@ -1,0 +1,68 @@
+name: Update Binance Funding Rates Dataset
+
+on:
+  workflow_dispatch:
+    inputs:
+      only_market:
+        description: "Which market to refresh"
+        required: true
+        default: "um"
+        type: choice
+        options: [um, cm, both]
+  schedule:
+    - cron: "20 4 1 * *"
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      DATASET_OWNER: haozhu18
+      DATASET_SLUG: binance-funding-rate-history
+      KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      JMS_SUB_URL: ${{ secrets.JMS_SUB_URL }}
+
+    steps:
+      - uses: actions/checkout@v6
+      
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          
+      - run: uv sync
+
+      - name: Download and setup Xray-core
+        run: |
+          wget https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
+          unzip Xray-linux-64.zip -d xray
+          chmod +x xray/xray
+
+      - name: Generate Xray config
+        run: uv run python src/generate_xray_config.py
+
+      - name: Start Xray proxy in background
+        run: |
+          ./xray/xray -c xray_config.json &
+          sleep 3 # Give it a moment to establish the connection
+        
+      - run: mkdir -p work/dataset
+      
+      - name: Download existing dataset
+        run: uv run kaggle datasets download -d $DATASET_OWNER/$DATASET_SLUG -p work/dataset --unzip || true
+        
+      - run: cp kaggle/dataset-metadata.json work/dataset/dataset-metadata.json
+      
+      - name: Run updater (Routed through Xray)
+        env:
+          HTTP_PROXY: "http://127.0.0.1:10809"
+          HTTPS_PROXY: "http://127.0.0.1:10809"
+        run: |
+          uv run python src/update_funding_dataset.py \
+            --dataset-root work/dataset \
+            --only-market "${{ inputs.only_market || 'both' }}"
+            
+      - name: Publish to Kaggle
+        run: |
+          uv run kaggle datasets version -p work/dataset -m "Refresh $(date -u +%F)" --dir-mode zip \
+          || uv run kaggle datasets create -p work/dataset --dir-mode zip
