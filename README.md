@@ -7,6 +7,6 @@ An automated data pipeline that extracts historical funding rates for all Binanc
 
 ## Features
 
-* **Automated CI/CD**: Runs as a scheduled GitHub Actions cron job, handling incremental updates without manual intervention.
+* **Automated**: Runs as a scheduled GitHub Actions cron job, handling incremental updates without manual intervention.
 * **Stateful Execution**: Utilizes a `state.json` checkpointing system. It tracks the exact millisecond of the last fetched row for every symbol, reducing duplicate API calls.
 * **Memory-Optimized Storage**: Data is typed and cast before storage. Target variables are enforced as `float64`, while repeating strings (`market_type`, `symbol`) are cast as PyArrow `category` types.
